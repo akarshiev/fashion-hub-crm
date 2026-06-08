@@ -18,7 +18,7 @@ jobs:
       - name: Setup Node.js v20
         uses: actions/setup-node@v4
         with:
-          node-node-version: 20
+          node-version: 20
           cache: 'npm'
           cache-dependency-path: './backend/package-lock.json'
 
@@ -26,7 +26,6 @@ jobs:
         run: |
           cd backend
           npm ci
-
 
   deploy:
     needs: build-and-test
@@ -42,17 +41,16 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 30m
           script: |
             set -e
 
-            # Loyiha papkasiga o'tish
             PROJECT_DIR="${{ secrets.EC2_PROJECT_DIR }}"
             cd "$PROJECT_DIR"
 
             echo "[CI/CD] Kodni oxirgi versiyaga yangilash..."
             git pull origin main
 
-            # NVM-ni faollashtirish
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
@@ -64,16 +62,20 @@ jobs:
             echo "[CI/CD] Frontend paketlarini yangilash va Build qilish..."
             cd frontend
             npm install
+            
+            # 2-Yechim: Node.js-ga xotirani boshqarish va CPU resursini tejash uchun buyruq beramiz
+            # NEXT_DISABLE_SOURCEMAPS resursni sezilarli darajada tejaydi
+            export NODE_OPTIONS="--max-old-space-size=1024"
+            export NEXT_DISABLE_SOURCEMAPS=1
+            
             npm run build
             cd ..
 
             echo "[CI/CD] Log papkasini yaratish va ruxsat berish..."
-            # Papkani sudo bilan yaratamiz va ec2-user'ni unga ega (owner) qilib qo'yamiz
             sudo mkdir -p /var/log/crm
             sudo chown -R ec2-user:ec2-user /var/log/crm
 
             echo "[CI/CD] PM2 orqali xizmatlarni yangilash..."
-            # Avval ecosystem config borligini va undagi nomlar to'g'riligini tekshiramiz
             if pm2 describe crm-backend > /dev/null 2>&1; then
               echo "Restarting existing processes..."
               pm2 restart crm-backend crm-frontend --update-env
