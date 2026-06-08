@@ -1,0 +1,62 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to EC2 via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USERNAME }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+
+            PROJECT_DIR="${{ secrets.EC2_PROJECT_DIR }}"
+            cd "$PROJECT_DIR"
+
+            echo "========================================="
+            echo "  Pulling latest code..."
+            echo "========================================="
+            git pull origin main
+
+            echo "========================================="
+            echo "  Installing dependencies..."
+            echo "========================================="
+            cd backend && npm install --production && cd ..
+            cd frontend && npm install && npm run build && cd ..
+
+            # Create log directory
+            sudo mkdir -p /var/log/crm
+
+            # Copy .env files if not present
+            if [ ! -f backend/.env ] && [ -f backend/.env.example ]; then
+              cp backend/.env.example backend/.env
+              echo "[!] Copied backend/.env from .env.example — edit with real values!"
+            fi
+
+            if [ ! -f frontend/.env.local ] && [ -f frontend/.env.example ]; then
+              cp frontend/.env.example frontend/.env.local
+            fi
+
+            echo "========================================="
+            echo "  Restarting services..."
+            echo "========================================="
+            pm2 restart crm-backend crm-frontend || pm2 start ecosystem.config.js
+
+            echo "========================================="
+            echo "  Deployment complete!"
+            echo "========================================="
