@@ -43,7 +43,6 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            # Muandislik qoidasi: Biror buyruq xato bersa, skriptni shu joyda to'xtatish
             set -e
 
             # Loyiha papkasiga o'tish
@@ -53,7 +52,7 @@ jobs:
             echo "[CI/CD] Kodni oxirgi versiyaga yangilash..."
             git pull origin main
 
-            # NVM (Node Version Manager) ni yuklash (Node v20 muhitini faollashtirish)
+            # NVM-ni faollashtirish
             export NVM_DIR="$HOME/.nvm"
             [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
@@ -68,8 +67,19 @@ jobs:
             npm run build
             cd ..
 
-            echo "[CI/CD] PM2 orqali xizmatlarni Zero-Downtime restart qilish..."
-            # --update-env yangi .env o'zgaruvchilari bo'lsa ularni ham kuchga kiritadi
-            pm2 restart crm-backend crm-frontend --update-env || pm2 start ecosystem.config.js
+            echo "[CI/CD] Log papkasini yaratish va ruxsat berish..."
+            # Papkani sudo bilan yaratamiz va ec2-user'ni unga ega (owner) qilib qo'yamiz
+            sudo mkdir -p /var/log/crm
+            sudo chown -R ec2-user:ec2-user /var/log/crm
+
+            echo "[CI/CD] PM2 orqali xizmatlarni yangilash..."
+            # Avval ecosystem config borligini va undagi nomlar to'g'riligini tekshiramiz
+            if pm2 describe crm-backend > /dev/null 2>&1; then
+              echo "Restarting existing processes..."
+              pm2 restart crm-backend crm-frontend --update-env
+            else
+              echo "Starting processes for the first time..."
+              pm2 start ecosystem.config.js
+            fi
 
             echo "[CI/CD] Deploy muvaffaqiyatli yakunlandi!"
