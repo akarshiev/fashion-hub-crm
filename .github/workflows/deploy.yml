@@ -1,15 +1,35 @@
-name: Deploy to EC2
+name: Deploy Fashion Hub CRM
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js v20
+        uses: actions/setup-node@v4
+        with:
+          node-node-version: 20
+          cache: 'npm'
+          cache-dependency-path: './backend/package-lock.json'
+
+      - name: Install Backend Dependencies
+        run: |
+          cd backend
+          npm ci
+
+
   deploy:
+    needs: build-and-test
     runs-on: ubuntu-latest
 
     steps:
@@ -17,46 +37,39 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Deploy to EC2 via SSH
-        uses: appleboy/ssh-action@v1
+        uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
+            # Muandislik qoidasi: Biror buyruq xato bersa, skriptni shu joyda to'xtatish
             set -e
 
+            # Loyiha papkasiga o'tish
             PROJECT_DIR="${{ secrets.EC2_PROJECT_DIR }}"
             cd "$PROJECT_DIR"
 
-            echo "========================================="
-            echo "  Pulling latest code..."
-            echo "========================================="
+            echo "[CI/CD] Kodni oxirgi versiyaga yangilash..."
             git pull origin main
 
-            echo "========================================="
-            echo "  Installing dependencies..."
-            echo "========================================="
-            cd backend && npm install --production && cd ..
-            cd frontend && npm install && npm run build && cd ..
+            # NVM (Node Version Manager) ni yuklash (Node v20 muhitini faollashtirish)
+            export NVM_DIR="$HOME/.nvm"
+            [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
 
-            # Create log directory
-            sudo mkdir -p /var/log/crm
+            echo "[CI/CD] Backend paketlarini yangilash..."
+            cd backend
+            npm install --production
+            cd ..
 
-            # Copy .env files if not present
-            if [ ! -f backend/.env ] && [ -f backend/.env.example ]; then
-              cp backend/.env.example backend/.env
-              echo "[!] Copied backend/.env from .env.example — edit with real values!"
-            fi
+            echo "[CI/CD] Frontend paketlarini yangilash va Build qilish..."
+            cd frontend
+            npm install
+            npm run build
+            cd ..
 
-            if [ ! -f frontend/.env.local ] && [ -f frontend/.env.example ]; then
-              cp frontend/.env.example frontend/.env.local
-            fi
+            echo "[CI/CD] PM2 orqali xizmatlarni Zero-Downtime restart qilish..."
+            # --update-env yangi .env o'zgaruvchilari bo'lsa ularni ham kuchga kiritadi
+            pm2 restart crm-backend crm-frontend --update-env || pm2 start ecosystem.config.js
 
-            echo "========================================="
-            echo "  Restarting services..."
-            echo "========================================="
-            pm2 restart crm-backend crm-frontend || pm2 start ecosystem.config.js
-
-            echo "========================================="
-            echo "  Deployment complete!"
-            echo "========================================="
+            echo "[CI/CD] Deploy muvaffaqiyatli yakunlandi!"
