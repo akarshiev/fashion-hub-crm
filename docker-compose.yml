@@ -1,0 +1,69 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: crm-mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_DB_NAME:-crm-system}
+    volumes:
+      - mongodb-data:/data/db
+    networks:
+      - crm-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok'
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: crm-backend
+    ports:
+      - "${BACKEND_PORT:-5000}:5000"
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      MONGODB_URI: ${MONGODB_URI:-mongodb://mongodb:27017/crm-system}
+      MONGODB_LOCAL: ${MONGODB_LOCAL:-mongodb://localhost:27017/crm-system}
+      PORT: 5000
+      NODE_ENV: production
+      JWT_SECRET: ${JWT_SECRET:-changeme}
+      JWT_EXPIRE: 7d
+      FRONTEND_URL: http://localhost:${FRONTEND_PORT:-3000}
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - crm-network
+    command: npm start
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: crm-frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:3000"
+    env_file:
+      - path: ./frontend/.env.local
+        required: false
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:5000}
+    depends_on:
+      - backend
+    networks:
+      - crm-network
+    command: npm start
+
+volumes:
+  mongodb-data:
+
+networks:
+  crm-network:
+    driver: bridge
