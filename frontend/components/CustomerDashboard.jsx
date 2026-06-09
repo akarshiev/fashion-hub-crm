@@ -79,7 +79,7 @@ export default function CustomerDashboard() {
                 <Sparkles size={16} className="text-black" />
               </div>
               <div>
-                <h1 className="text-sm font-semibold text-white tracking-tight">Fashion Hub</h1>
+                <h1 className="text-sm font-semibold text-white tracking-tight">Retake Test</h1>
                 <p className="text-[11px] text-white/30">Customer Portal</p>
               </div>
             </div>
